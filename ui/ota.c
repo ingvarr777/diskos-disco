@@ -698,10 +698,14 @@ int ota_pending(const ota_paths_t *p, char *ver, size_t n){
 }
 
 static int hex64(const char *s){ if(strlen(s) != 64) return 0; for(int i = 0; i < 64; i++) if(!((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'f'))) return 0; return 1; }
+/* Room for S97's whole run record: the running build plus GOOD_* and PREV_* (about 470 bytes at most; read_file refuses
+ * anything that does not fit, so a short buffer silently turns every trial with a kept good build into "not a trial").
+ * Same size as the launcher's reader. */
+enum { RUN_REC_MAX = 1024 };
 /* Trial boot = the launcher's intent (/tmp/.diskos_run) AND its statement of what it really started (/tmp/.diskos_launched)
  * both say BUILD=trial with the same 64-hex SHA256. No hashing here (cheap enough for the UI thread). */
 int ota_trial_version(const ota_paths_t *p, char *ver, size_t n){
-    char t[256], u[256], b1[16], b2[16], s1[80], s2[80];
+    char t[RUN_REC_MAX], u[RUN_REC_MAX], b1[16], b2[16], s1[80], s2[80];
     if(read_file(p->run_file, t, sizeof t) <= 0 || read_file(p->launched_file, u, sizeof u) <= 0) return 0;
     if(sys_kv(t, "BUILD", b1, sizeof b1) != 0 || strcmp(b1, "trial") != 0) return 0;
     if(sys_kv(u, "BUILD", b2, sizeof b2) != 0 || strcmp(b2, "trial") != 0) return 0;
@@ -713,7 +717,7 @@ int ota_trial_version(const ota_paths_t *p, char *ver, size_t n){
 /* the strict form: as above, and the executable that is RUNNING hashes to that SHA256 (a fallback/flashed UI never vouches
  * for a trial it did not run, even with identical-looking run files). Fills sha. */
 static int trial_is_me(const ota_paths_t *p, char sha[80]){
-    char t[256], self[65];
+    char t[RUN_REC_MAX], self[65];
     if(!ota_trial_version(p, NULL, 0)) return 0;
     if(read_file(p->run_file, t, sizeof t) <= 0 || sys_kv(t, "SHA256", sha, 80) != 0) return 0;
     if(sha256_file(p->self_exe, self) != 0 || strcmp(self, sha) != 0) return 0;

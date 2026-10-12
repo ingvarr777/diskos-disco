@@ -21,10 +21,14 @@ fileops_test: fileops_test.c ../fileops.c
 apps_shortcut_test: apps_shortcut_test.c ../apps.c ../config.c ../md5.c
 	$(CC) $(CFLAGS) $(subst diskos_cfgtest,diskos_shortcuttest,$(DEFS)) -D_GNU_SOURCE -DLV_CONF_INCLUDE_SIMPLE -ffunction-sections -fdata-sections -I.. $< ../config.c ../md5.c -Wl,--gc-sections -o $@
 
+ota_trial_test: ota_trial_test.c ../ota.c ../ota.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -DLV_CONF_INCLUDE_SIMPLE -ffunction-sections -fdata-sections -I.. $< -Wl,--gc-sections -o $@
+
 .PHONY: review
-review: fileops_test apps_shortcut_test
+review: fileops_test apps_shortcut_test ota_trial_test
 	./fileops_test
 	./apps_shortcut_test
+	./ota_trial_test
 
 .PHONY: run clean
 run: config_test playstate_test
@@ -33,4 +37,4 @@ run: config_test playstate_test
 	./playstate_test
 
 clean:
-	rm -f config_test playstate_test fileops_test apps_shortcut_test
+	rm -f config_test playstate_test fileops_test apps_shortcut_test ota_trial_test
