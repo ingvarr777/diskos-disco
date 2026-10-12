@@ -473,6 +473,23 @@ static int fin_at(int ufd, int ifd, int rc, int line){                    /* fai
 }
 #define fin(u, i, r) fin_at((u), (i), (r), __LINE__)
 
+/* 1 = the verified bundle in <ifd> carries an mq_ui that boot rolled back before. S97 remembers the sha256 of every
+ * rolled-back build in <updates>/rejected (one per line, the last 8) and drops a staged bundle that matches without any
+ * marker, so refuse it here, where the user can be told. Re-signing does not change the binary's hash; only a rebuild does. */
+static int rejected_build(int ufd, int ifd){
+    char mt[8192 + 1], sha[80], rj[1024];
+    if(read_at(ifd, OTA_FILES[OTA_MANIFEST_IDX].local, mt, sizeof mt) < 0 || sys_kv(mt, "sha256", sha, sizeof sha) != 0) return 0;
+    if(read_at(ufd, "rejected", rj, sizeof rj) <= 0) return 0;
+    size_t sl = strlen(sha);
+    for(const char *l = rj; *l; ){
+        const char *nl = strchr(l, '\n');
+        size_t len = nl ? (size_t)(nl - l) : strlen(l);
+        if(len == sl && !strncmp(l, sha, sl)) return 1;
+        l = nl ? nl + 1 : l + len;
+    }
+    return 0;
+}
+
 int ota_stage(const ota_paths_t *p, const char *running, const char *tag, ota_prog_t *pg){
     char kep[16], uep[16], path[300];
     atomic_store(&pg->done, 0); atomic_store(&pg->total, 0); atomic_store(&pg->phase, 1); pg->need_free = 0; pg->version[0] = 0;
@@ -536,6 +553,7 @@ int ota_stage(const ota_paths_t *p, const char *running, const char *tag, ota_pr
     if(ota_ver_parse(ver, 0, tv) != 0) return fin(ufd, ifd, OTA_E_BAD);                  /* signed version must be strict N.N.N too */
     if(ota_ver_cmp(running, 0, ver, 0) != -1) return fin(ufd, ifd, OTA_E_OLDER);         /* a validly signed OLD bundle replayed under a new tag */
     if(ota_ver_cmp(tag, 1, ver, 0) != 0) return fin(ufd, ifd, OTA_E_BAD);                /* signed version must be the release's */
+    if(rejected_build(ufd, ifd)){ why("this %s build was rolled back on this Disc before", ver, 0); return fin(ufd, ifd, OTA_E_REJECTED); }
 
     /* commit: ready last, fsync everything (errors are failures), keep the old pending until the new one is durable */
     if(atomic_load(&pg->cancel)) return fin(ufd, ifd, OTA_E_CANCEL);
@@ -644,6 +662,7 @@ int ota_stage_dir(const ota_paths_t *p, const char *src, ota_prog_t *pg){
                             return fin(ufd, ifd, vrc < 0 ? OTA_E_RUN : (vrc == 1 && !capped) ? reject_class(out) : OTA_E_BAD); }   /* couldn't run != damaged */
     char ver[40], ep[16];
     if(strncmp(out, "OK ", 3) != 0 || tok(out, "version", ver, sizeof ver) != 0 || tok(out, "epoch", ep, sizeof ep) != 0 || !all_digits(ep, 18)) return fin(ufd, ifd, OTA_E_BAD);
+    if(rejected_build(ufd, ifd)){ why("this %s build was rolled back on this Disc before", ver, 0); return fin(ufd, ifd, OTA_E_REJECTED); }
 
     if(atomic_load(&pg->cancel)) return fin(ufd, ifd, OTA_E_CANCEL);
     atomic_store(&pg->phase, 3);
@@ -779,6 +798,7 @@ const char *ota_err_text(int code){
     case OTA_E_OLDER: return "Update refused - older than what you have";
     case OTA_E_BAD: return "Update rejected - the download is damaged";
     case OTA_E_RUN: return "Couldn't check the update. Restart the player and try again.";
+    case OTA_E_REJECTED: return "Update refused - this build was rolled back before. Rebuild it to try again.";
     default: return "Couldn't save the update. Try again.";
     }
 }

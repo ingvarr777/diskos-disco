@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
-/* Trial detection in the production ota.c, against real run/launched records in a temp dir.
+/* Trial detection and staging refusals in the production ota.c, against real files in a temp dir.
  * Run: make -C ui/tests ota_trial_test && ui/tests/ota_trial_test */
 #include <assert.h>
 #include <stdio.h>
@@ -30,7 +30,7 @@ int command_spawn_io(pid_t *pid, char *const argv[], int in_fd, int fd3){
 }
 
 static char root[] = "/tmp/diskos-ota-trial-XXXXXX";
-static char run_p[300], launched_p[300], upd_p[300], self_p[300];
+static char run_p[300], launched_p[300], upd_p[300], self_p[300], pub_p[300], ep_p[300], ver_p[300], src_p[300];
 static ota_paths_t P;
 static char self_sha[65];
 
@@ -96,18 +96,62 @@ static void not_a_trial(void){
     puts("PASS fallback, foreign and oversize run records are not treated as this trial");
 }
 
+/* ota_stage_dir with a stub verifier: everything up to the commit is real */
+static void make_bundle(const char *ui_bytes){
+    char p[400];
+    const char *names[] = { "keyauthz", "keyauthz.sig", "leafpub.pem", "update.manifest.sig" };
+    for(int i = 0; i < 4; i++){ snprintf(p, sizeof p, "%s/%s", src_p, names[i]); put(p, "x\n"); }
+    snprintf(p, sizeof p, "%s/mq_ui", src_p); put(p, ui_bytes);
+    char sha[65]; assert(sha256_file(p, sha) == 0);
+    char man[300]; snprintf(man, sizeof man, "diskos-update-v1\ncomponent=mq_ui\nepoch=500000\nversion=1.4.1\nsize=%zu\nsha256=%s\nchannel=sd\n", strlen(ui_bytes), sha);
+    snprintf(p, sizeof p, "%s/update.manifest", src_p); put(p, man);
+}
+static void stage_refuses_rejected(void){
+    ota_prog_t pg; memset(&pg, 0, sizeof pg);
+    char rj[300], pend[300], sha[65], b[400];
+    join(rj, "updates/rejected"); join(pend, "updates/pending/ready");
+    make_bundle("ELF-ish test binary\n");
+    snprintf(b, sizeof b, "%s/mq_ui", src_p); assert(sha256_file(b, sha) == 0);
+
+    unlink(rj);
+    assert(ota_stage_dir(&P, src_p, &pg) == OTA_OK);                       /* control: stages when nothing was rolled back */
+    assert(access(pend, F_OK) == 0);
+    assert(ota_discard_pending(&P) == 1);
+
+    snprintf(b, sizeof b, "%064d\n%s\n%064d\n", 7, sha, 8);                /* S97 keeps the last 8 rolled-back hashes */
+    put(rj, b);
+    memset(&pg, 0, sizeof pg);
+    assert(ota_stage_dir(&P, src_p, &pg) == OTA_E_REJECTED);
+    assert(access(pend, F_OK) != 0);
+    char lr[300]; join(lr, "updates/last_result");
+    assert(slurp(lr, b, sizeof b) > 0 && strstr(b, "rolled back"));
+    assert(ota_err_text(OTA_E_REJECTED) != NULL);
+
+    snprintf(b, sizeof b, "%.63s\n", sha);                                  /* a prefix is not a match */
+    put(rj, b);
+    memset(&pg, 0, sizeof pg);
+    assert(ota_stage_dir(&P, src_p, &pg) == OTA_OK);
+    assert(ota_discard_pending(&P) == 1);
+    puts("PASS SD staging refuses a build boot rolled back before, and only that build");
+}
+
 int main(void){
     assert(mkdtemp(root));
     join(run_p, "run"); join(launched_p, "launched"); join(upd_p, "updates"); join(self_p, "self_exe");
-    assert(mkdir(upd_p, 0700) == 0);
+    join(pub_p, "root.pub.pem"); join(ep_p, "epochs"); join(ver_p, "verify.sh"); join(src_p, "sd");
+    assert(mkdir(upd_p, 0700) == 0 && mkdir(src_p, 0700) == 0);
     put(self_p, "pretend this is the running mq_ui\n");
     assert(sha256_file(self_p, self_sha) == 0);
+    put(pub_p, "pub\n");
+    put(ep_p, "MIN_KEY_EPOCH=1\nMIN_UI_EPOCH=1\n");
+    put(ver_p, "#!/bin/sh\necho \"OK component=mq_ui version=1.4.1 epoch=500000 keyepoch=1\"\n");
     P = OTA_DEV;
-    P.updates = upd_p;
+    P.updates = upd_p; P.rootpub = pub_p; P.epochs = ep_p; P.verifier = ver_p; P.data_root = root;
     P.run_file = run_p; P.launched_file = launched_p; P.self_exe = self_p;
 
     trial_record_sizes();
     not_a_trial();
+    stage_refuses_rejected();
     puts("PASS ota_trial_test");
     return 0;
 }

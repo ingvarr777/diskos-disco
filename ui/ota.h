@@ -24,7 +24,8 @@ typedef struct {
 } ota_paths_t;
 extern const ota_paths_t OTA_DEV;
 
-enum { OTA_OK = 0, OTA_E_CANCEL, OTA_E_NET, OTA_E_SPACE, OTA_E_UNSUPPORTED, OTA_E_SIG, OTA_E_OLDER, OTA_E_BAD, OTA_E_IO, OTA_E_OFF, OTA_E_RUN };   /* RUN: the checker could not run (spawn / timeout / killed), not a bad update */
+enum { OTA_OK = 0, OTA_E_CANCEL, OTA_E_NET, OTA_E_SPACE, OTA_E_UNSUPPORTED, OTA_E_SIG, OTA_E_OLDER, OTA_E_BAD, OTA_E_IO, OTA_E_OFF, OTA_E_RUN,   /* RUN: the checker could not run (spawn / timeout / killed), not a bad update */
+       OTA_E_REJECTED };   /* REJECTED: this exact mq_ui was rolled back on this Disc (<updates>/rejected); boot would drop it */
 
 #define OTA_NFILES 6
 #define OTA_MAX_UI (32LL * 1024 * 1024)      /* same cap the verifier applies to mq_ui */

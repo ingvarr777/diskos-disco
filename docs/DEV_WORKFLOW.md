@@ -131,7 +131,7 @@ SSH is optional; it is not required to install an update. These commands only re
 ```sh
 DISKOS_IP=192.168.1.50  # replace with the address shown in Debug Mode
 ssh "root@$DISKOS_IP" 'cat /usr/data/updates/last_result'
-ssh "root@$DISKOS_IP" 'cat /usr/data/updates/run; cat /usr/data/updates/accepted'
+ssh "root@$DISKOS_IP" 'cat /tmp/.diskos_run; cat /usr/data/updates/accepted'
 ssh "root@$DISKOS_IP" 'sha256sum /etc/diskos-ota/root.pub.pem'
 ssh "root@$DISKOS_IP" 'md5sum /usr/data/mq_ui'
 ```
@@ -139,7 +139,10 @@ ssh "root@$DISKOS_IP" 'md5sum /usr/data/mq_ui'
 Some files will be absent before a first update. `last_result` can be absent or reflect an older
 attempt if the new attempt failed before staging could open its state directory. Compare the
 installed public-key hash with your signing folder's `diskos-root.pub.pem`.
-Do not overwrite `/usr/data/mq_ui`, change the boot manifest, or kill `mq_player`.
+Do not overwrite `/usr/data/mq_ui`, change the boot manifest, or kill `mq_player`. After an SD update,
+`/usr/data/mq_ui` is a hard link to the kept build (`/usr/data/updates/good/mq_ui` or `active/mq_ui`), so writing
+into it (`cat >`, `scp`, `cp` over it) also corrupts that copy: the next boot then deletes it and the Disc loses its
+rollback build. Install builds through the SD workflow above.
 
 For screenshots and touch tools, see [tools/README.md](../tools/README.md). Player logs are at
 `/usr/data/fiio/log/fiio_player.log`; PCM status is under `/proc/asound/card*/pcm*p/sub*/status`.

@@ -70,6 +70,10 @@ recreates its output folder, so never point it at your keys or source folder.
 only accepts a higher epoch than the last one it accepted; the version label doesn't matter. So keep your clock
 right, and to retest, simply sign again a minute later. An old folder is refused as a downgrade.
 
+**A rolled-back build can't be retried.** When a trial rolls back, the Disc remembers that `mq_ui` (by its hash,
+the last eight builds) and refuses it from then on, however it is signed. Signing it again doesn't help: rebuild it
+(any change gives a new hash) and sign the new `mq_ui`.
+
 Optional check on the computer:
 
 ```sh
@@ -108,6 +112,7 @@ repeatedly before the trial is accepted.
 | Same or older epoch | Sign again a minute later with a correct clock and replace the whole folder. |
 | Not enough space | The Disc's own data partition is full; free space on the SD card doesn't help. |
 | Old build after a trial | The trial was rolled back or never accepted; check About. |
+| "This build was rolled back before" | That exact `mq_ui` failed a trial on this Disc. Rebuild it, then sign and copy again. |
 | Old build after flashing | Check which file you passed with `--ui`. A new flash clears old SD builds. |
 
 For details, turn on **Settings > System > Maintenance > Debug Mode** and use the address it shows:
@@ -115,7 +120,8 @@ For details, turn on **Settings > System > Maintenance > Debug Mode** and use th
 ```sh
 DISKOS_IP=192.168.1.50  # the address shown in Debug Mode
 ssh "root@$DISKOS_IP" 'cat /usr/data/updates/last_result'
-ssh "root@$DISKOS_IP" 'cat /usr/data/updates/run; cat /usr/data/updates/accepted'
+ssh "root@$DISKOS_IP" 'cat /tmp/.diskos_run; cat /usr/data/updates/accepted'
+ssh "root@$DISKOS_IP" 'tail -n 30 /usr/data/diskos_install.log'
 ssh "root@$DISKOS_IP" 'sha256sum /etc/diskos-ota/root.pub.pem'
 ```
 
